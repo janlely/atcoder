@@ -1,13 +1,16 @@
+{-# LANGUAGE BangPatterns#-}
 module Lib
     ( someFunc
     ) where
 
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, forM_)
 import qualified Data.Vector.Unboxed as VU
-import qualified  Data.Map as M
+import qualified Data.Vector.Unboxed.Mutable as VUM
+import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.List as L
-import Data.Ord (comparing)
+import Control.Monad.ST ( ST, runST ) 
+import Debug.Trace (trace)
 
 
 data CountTree = CountTree
@@ -15,42 +18,31 @@ data CountTree = CountTree
     , childs_ :: [CountTree]
     } deriving Show
 
+process :: CountTree -> VU.Vector Int
+process (CountTree 1 []) = VU.singleton 1
+process (CountTree n childs) = VU.fromList . fst . VU.foldl' foldFunc ([0],0) $ getResult childs
+    where foldFunc (ls, v1) v2 = let v = (v1 + v2) `mod` 998244353 in (v:ls, v)
+          getResult chs = let !cs = map process chs
+                           in snd . L.foldl1' combine $ zip (map count_ chs) cs
 
-solve :: CountTree -> VU.Vector Int
-solve (CountTree 1 []) = VU.fromList [0,1]
-solve (CountTree n childs) = VU.fromList
-                             . (0:)
-                             . reverse
-                             . map (snd . bigToSmall . L.foldl1 merge)
-                             . L.groupBy (equalBy fst)
-                             . L.sortBy (comparing fst)
-                             . concatMap (L.unfoldr extend) 
-                             $ getResult childs
-    where extend (x,y)
-            | x + 1 <= n = Just ((x+1, y), (x+1, y))
-            | otherwise = Nothing 
-          bigToSmall (x, y) = (n + 1 - x, y)
-          getResult chs = snd . L.foldl1 combine $ zip (map count_ chs) (map (tail . VU.toList . VU.indexed . solve) chs)
-    
-          
-merge :: (Int, Int) -> (Int, Int) -> (Int, Int)
-merge (a,b) (c,d)
-  | a == c = (a, b+d)
-  | otherwise = error "invalid input" 
-    
-combine :: (Int, [(Int, Int)]) -> (Int, [(Int, Int)]) -> (Int, [(Int, Int)])
-combine (c1,l1) (c2,l2) = (c1 + c2, combs)
-    where combs = map (L.foldl1 merge)
-              . L.groupBy (equalBy fst) . concat $ do
-              (i1, p1) <- l1
-              (i2, p2) <- l2
-              return $ comb (c1, i1, p1) (c2, i2, p2) ++ comb (c2, i2, p2) (c1, i1, p1)
-          comb :: (Int, Int, Int) -> (Int, Int, Int) -> [(Int, Int)]
-          comb (n, i, pi) (m, j, pj) = L.foldl (\res k -> (i+j+k, cm (i-1) (i+j+k-1) * cm (n-i) (m+n-i-j-k) * pi * pj) : res) [] [0,1..m-j]
-
-          
-equalBy :: (Eq b) => (a -> b) -> a -> a -> Bool
-equalBy f a b = f a == f b
+combine :: (Int, VU.Vector Int) -> (Int, VU.Vector Int) -> (Int, VU.Vector Int)
+combine (c1, v1) (c2, v2) = (c1+c2, runST combine')
+    where comb :: (Int, Int, Int) -> (Int, Int, Int) -> [(Int, Int)]
+          comb (n, i, pi) (m, j, pj) = L.foldl' (\res k ->
+              let !x = cm (i-1) (i+j+k-1) * cm (n-i) (m+n-i-j-k) * pi * pj
+               in (i+j+k-1, x `mod` 998244353) : res) [] [0,1..m-j]
+          toPair = filter ((>0) . snd) . VU.toList . VU.indexed
+          combine' :: ST s (VU.Vector Int)
+          combine' = do
+              v <- VUM.replicate (c1+c2) 0
+              forM_ [(i1, p1, i2, p2)| (i1, p1) <-  toPair v1, (i2, p2) <- toPair v2] $ \(a,b,c,d) -> do
+                  let cs1 = comb (c1, a+1, b) (c2, c+1, d)
+                      cs2 = comb (c2, c+1, d) (c1, a+1, b)
+                  forM_ cs1 $ \(i, p) -> do
+                      VUM.modify v ((`mod` 998244353) . (+ p)) i
+                  forM_ cs2 $ \(i, p) -> do
+                      VUM.modify v ((`mod` 998244353) . (+ p)) i
+              VU.unsafeFreeze v
 
 cm :: Int -> Int -> Int
 cm 0 _ = 1
@@ -82,4 +74,4 @@ someFunc = do
     let m = L.foldl foldFunc M.empty edges
         foldFunc a (b,c) = M.unionsWith S.union [M.singleton b (S.singleton c), M.singleton c (S.singleton b), a]
         ct = buildCountTree 1 m 
-    print $ 2 * VU.sum (solve ct)
+    print $ 2 * VU.foldl' (\x y -> (x+y) `mod` 998244353) 0 (process ct) `mod` 998244353 
