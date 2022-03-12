@@ -12,50 +12,45 @@ import qualified Data.List as L
 import Control.Monad.ST ( ST, runST ) 
 import Debug.Trace (trace)
 
-
 data CountTree = CountTree
     { count_ :: Int
     , childs_ :: [CountTree]
     } deriving Show
 
+modulo :: Int -> Int
+modulo = (`mod` 998244353)
+
 process :: CountTree -> VU.Vector Int
 process (CountTree 1 []) = VU.singleton 1
 process (CountTree n childs) = VU.fromList . fst . VU.foldl' foldFunc ([0],0) $ getResult childs
-    where foldFunc (ls, v1) v2 = let v = (v1 + v2) `mod` 998244353 in (v:ls, v)
-          getResult chs = let !cs = map process chs
+    where foldFunc (ls, v1) v2 = let v = modulo (v1 + v2) in (v:ls, v)
+          getResult chs = let cs = map process chs
                            in snd . L.foldl1' combine $ zip (map count_ chs) cs
 
 combine :: (Int, VU.Vector Int) -> (Int, VU.Vector Int) -> (Int, VU.Vector Int)
 combine (c1, v1) (c2, v2) = (c1+c2, runST combine')
-    where comb :: (Int, Int, Int) -> (Int, Int, Int) -> [(Int, Int)]
-          comb (n, i, pi) (m, j, pj) = L.foldl' (\res k ->
-              let !x = cm (i-1) (i+j+k-1) * cm (n-i) (m+n-i-j-k) * pi * pj
-               in (i+j+k-1, x `mod` 998244353) : res) [] [0,1..m-j]
-          toPair = filter ((>0) . snd) . VU.toList . VU.indexed
+    where toPair = filter ((>0) . snd) . VU.toList . VU.takeWhile ((>0) . snd) . VU.dropWhile ((== 0) . snd) . VU.indexed
+          v1' = VU.scanl1 (+) v1
+          v2' = VU.scanl1 (+) v2
+          comb :: (Int, Int, Int) -> (Int, VU.Vector Int) -> [(Int, Int)]
+          comb (n, i, p) (m, v) = L.foldl' (\res k ->(i+k-1, p * (v VU.! (k-1)) * cm (i-1) (i-1+k) * cm (n-i) (m+n-i-k)) : res) [] [1,2..m]
           combine' :: ST s (VU.Vector Int)
           combine' = do
               v <- VUM.replicate (c1+c2) 0
-              forM_ [(i1, p1, i2, p2)| (i1, p1) <-  toPair v1, (i2, p2) <- toPair v2] $ \(a,b,c,d) -> do
-                  let cs1 = comb (c1, a+1, b) (c2, c+1, d)
-                      cs2 = comb (c2, c+1, d) (c1, a+1, b)
-                  forM_ cs1 $ \(i, p) -> do
-                      VUM.modify v ((`mod` 998244353) . (+ p)) i
-                  forM_ cs2 $ \(i, p) -> do
-                      VUM.modify v ((`mod` 998244353) . (+ p)) i
+              forM_ (toPair v1) $ \(i,p) -> do
+                  let !cs1 = comb (c1, i+1, p) (c2, v2')
+                  forM_ cs1 $ \(i', p') -> do
+                      VUM.modify v (modulo . (+ p')) i'
+              forM_ (toPair v2) $ \(i,p) -> do
+                  let !cs2 = comb (c2, i+1, p) (c1, v1')
+                  forM_ cs2 $ \(i', p') -> do
+                      VUM.modify v (modulo . (+ p')) i'
               VU.unsafeFreeze v
 
 cm :: Int -> Int -> Int
 cm 0 _ = 1
 cm _ 0 = 1
 cm a b = b * cm (a-1) (b-1) `div` a
-
-perm :: [a] -> [[a]]
-perm []     = return []
-perm (x:xs) = perm xs >>= ins x
-    where
-    ins :: a -> [a] -> [[a]]
-    ins x []     = [[x]]
-    ins x (y:ys) = (x:y:ys) : map (y:) (ins x ys)
 
 buildCountTree :: Int -> M.Map Int (S.Set Int) -> CountTree
 buildCountTree root src
@@ -73,5 +68,5 @@ someFunc = do
         return (a,b)
     let m = L.foldl foldFunc M.empty edges
         foldFunc a (b,c) = M.unionsWith S.union [M.singleton b (S.singleton c), M.singleton c (S.singleton b), a]
-        ct = buildCountTree 1 m 
-    print $ 2 * VU.foldl' (\x y -> (x+y) `mod` 998244353) 0 (process ct) `mod` 998244353 
+        !ct = buildCountTree 1 m 
+    print . modulo $ 2 * VU.foldl' (\x y -> modulo (x+y)) 0 (process ct)
