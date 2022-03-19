@@ -11,12 +11,6 @@ import qualified Data.Vector as V
 import Data.Maybe (fromJust)
 import qualified Data.ByteString.Char8 as B
 
-data CountTree = CountTree
-    { count_ :: Int
-    , value_ :: Int
-    , childs_ :: [CountTree]
-    } deriving Show
-
 modulo :: Integral a => a -> a
 modulo = (`mod` 998244353)
 
