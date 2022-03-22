@@ -32,9 +32,11 @@ library
       src
   build-depends:
       array
+    , async
     , base >=4.7 && <5
     , bytestring
     , containers
+    , parallel
     , vector
   default-language: Haskell2010
 
@@ -48,9 +50,11 @@ executable D-Zigzag-Tree-exe
   build-depends:
       D-Zigzag-Tree
     , array
+    , async
     , base >=4.7 && <5
     , bytestring
     , containers
+    , parallel
     , vector
   default-language: Haskell2010
 
@@ -65,8 +69,10 @@ test-suite D-Zigzag-Tree-test
   build-depends:
       D-Zigzag-Tree
     , array
+    , async
     , base >=4.7 && <5
     , bytestring
     , containers
+    , parallel
     , vector
   default-language: Haskell2010

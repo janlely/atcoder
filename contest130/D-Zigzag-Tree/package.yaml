@@ -25,6 +25,8 @@ dependencies:
 - array
 - vector
 - bytestring
+- parallel
+- async
 
 library:
   source-dirs: src

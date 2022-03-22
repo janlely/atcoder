@@ -3,13 +3,16 @@ module Lib
     ( someFunc
     ) where
 
-import Control.Monad (replicateM_,forM_,when)
+import Control.Monad (replicateM_,forM_,when,unless)
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import qualified Data.Vector.Mutable as VM
 import qualified Data.Vector as V
 import Data.Maybe (fromJust)
 import qualified Data.ByteString.Char8 as B
+import Control.Parallel.Strategies ( parMap, rpar )
+import Control.Concurrent.MVar
+    ( newEmptyMVar, putMVar, readMVar, tryPutMVar )
 
 modulo :: Integral a => a -> a
 modulo = (`mod` 998244353)
@@ -34,8 +37,19 @@ someFunc = do
         VM.modify edgeList (a:) b
     edges <- V.unsafeFreeze edgeList
     combTable <- VM.replicate (n+1) (VU.empty::VU.Vector Int)
+    -- locks <- VM.new (n+1)
+    -- locks2 <- VM.new (n+1)
+    -- forM_ [1,2..n] $ \i -> do
+    --     lock <- newEmptyMVar 
+    --     VM.write locks i lock
+    -- forM_ [1,2..n] $ \i -> do
+    --     lock <- newEmptyMVar 
+    --     VM.write locks2 i lock
     let compute :: Int -> IO ()
         compute i = do
+            -- lock <- VM.read locks i
+            -- res <- tryPutMVar lock 1
+            -- when res $ do
             combv <- VUM.replicate (i+1) 0
             let i' = fromIntegral i
                 idx = [2,3..i' `div` 2]
@@ -44,15 +58,21 @@ someFunc = do
                 VUM.write combv ix (fromIntegral $ modulo v)
             combv' <- VU.unsafeFreeze combv
             VM.write combTable i combv'
+            -- lock <- VM.read locks2 i
+            -- putMVar lock 1
         comb :: Int -> Int -> IO Int
         comb i j
           | i == j || i == 0 || j == 0 = return 1
           | i == 1 = return j
           | 2*i > j = comb (j-i) j
           | otherwise = do
+            -- compute j
             ct <- VM.read combTable j
             when (VU.null ct) (compute j)
             ct' <- VM.read combTable j
+            -- lock <- VM.read locks2 j
+            -- readMVar lock
+            -- ct <- VM.read combTable j
             return $ ct' VU.! i
         combine :: IO (Int, VU.Vector Int) -> IO (Int, VU.Vector Int) -> IO (Int, VU.Vector Int)
         combine c1v1 c2v2 = do
@@ -80,6 +100,7 @@ someFunc = do
         solve parent node
           | null childNodes = return  (1, VU.singleton 1)
           | otherwise = do
+            --  (count, combines) <- foldl1 combine . parMap rpar (solve node) $ childNodes
              (count, combines) <- foldl1 combine . map (solve node) $ childNodes
              return (count+1, VU.fromList . fst . VU.foldl' foldFunc ([0],0) $ combines)
           where foldFunc (ls, v1) v2 = let v = v1 `mp` v2 in (v:ls, v)
